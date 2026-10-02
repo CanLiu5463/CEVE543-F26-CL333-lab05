@@ -64,7 +64,8 @@ colors = Makie.wong_colors()
 
 ```{julia}
 #| solution: false
-station = "8638610" # update to your station
+# station = "9410660" # update to your station
+station = "8735180" # Mobile， AL
 record = load_water_level(station; cache=joinpath(here, "$station-hourly.csv"))
 ```
 
@@ -85,8 +86,16 @@ Thus, you may find a slightly different record length to what you had in Lab 4.
 
 ```{julia}
 #| solution: false
-detrend_method = :msl # :msl, :linear, or :none
+detrend_method = :linear # :msl, :linear, or :none
 detrended = detrend(record; method=detrend_method)
+idx = [i for (i,t) in enumerate(detrended.times)]
+# idx = [i for (i,t) in enumerate(detrended.times) if t >= DateTime(2020,1,1,0) && t <= DateTime(2020,12,31,23)]
+detrended = WaterLevelRecord(
+    detrended.station,
+    detrended.times[idx],
+    detrended.levels[idx],
+    detrended.unit
+)
 
 times = obstimes(detrended)
 levels = ustrip.(u"ft", waterlevels(detrended))                        # <1>
@@ -109,10 +118,10 @@ fig = Figure(; size=(700, 480))
 ax_raw = Axis(fig[1, 1]; ylabel=L"\text{observed (ft)}")
 ax_flat = Axis(fig[2, 1]; xlabel=L"\text{year}", ylabel=L"\text{detrended (ft)}")
 scatter!(ax_raw, decimal_year.(obstimes(record)), raw_levels;
-    color=(:gray, 0.1), markersize=1, rasterize=true)                  # <3>
+   color=(:gray, 0.1), markersize=1, rasterize=true)                  # <3>
 lines!(
-    ax_raw, obsyears(annual_msl) .+ 0.5, ustrip.(baseline(annual_msl));
-    color=colors[2], linewidth=2
+   ax_raw, obsyears(annual_msl) .+ 0.5, ustrip.(baseline(annual_msl));
+   color=colors[2], linewidth=2
 )
 scatter!(ax_flat, decimal_year.(times), levels;
     color=(colors[1], 0.1), markersize=1, rasterize=true)
@@ -134,7 +143,7 @@ The high readings at the top of the lower panel are what the threshold and the G
 **Your answer.**
 Which method did you choose for your gauge, and why?
 
-> *Answer here*
+> I will choose the linear, because I believe that sea level has a long-term trend related to factors such as climate change. Also, I want to reserve the year-to-year variability. 
 
 
 ## Declustering
@@ -148,7 +157,7 @@ Declustering happens once, at a base threshold `u_base`, which has to lie below 
 
 ```{julia}
 #| solution: false
-min_gap_hours = 72                                                     # <- your choice
+min_gap_hours = 168                                           # <- your choice
 u_base = quantile(levels, 0.99)                                        # <1>
 
 peak_idx, _ = decluster(times, levels, u_base; min_gap_hours=min_gap_hours)
@@ -192,7 +201,7 @@ fig
 What gap did you choose, and why does it suit the storms that raise water levels at your gauge?
 Use the table: say whether the storm count levels off over some range of gaps, and where your choice falls relative to that range.
 
-> *Answer here*
+> I compared the number of identified storms under different gap lengths. The storm count decreased from 621 at 12 h to 352 at 24 h, 313 at 72 h, and 261 at 168 h. The decrease became much smaller after 24 h. However, the time-series plot showed that some extreme peaks were still closely spaced with a 72-hour gap. Therefore, considering both the storm counts and the temporal separation of extreme events, I selected a 168-hour gap.
 
 
 ## Threshold diagnostics
@@ -220,7 +229,7 @@ The default of 3.5 ft shown here is not necessarily a good one!
 
 ```{julia}
 #| solution: false
-threshold = 3.5                                                        # <- your choice
+threshold = 2.5                                           # <- your choice
 threshold > u_base || error("threshold must exceed u_base, $(round(u_base; digits=2))")
 n_exceed = count(>(threshold), peaks)
 λ = n_exceed / n_years
@@ -233,7 +242,7 @@ n_exceed >= 30 || @warn "only $n_exceed storms above the threshold; try lowering
 What threshold did you choose?
 Point to what in each plot supports it, and say how many storms remain above it.
 
-> *Answer here*
+> I chose a threshold of 2.5 because the shape and scale parameters are relatively stable between 2.5 and 2.8, and the mean excess shows a relatively clear linear trend in this range.  56 storms remain above 2.5, almost 1.37 per year.
 
 
 ## The model
@@ -308,7 +317,7 @@ fig = Figure(; size=(700, 400))
 ax = Axis(fig[1, 1]; ylabel=L"\text{return level (ft)}")
 lines!(
     ax, return_periods, [returnlevel(gpd_mle, T; rate=λ) for T in return_periods];
-    color=colors[1], linewidth=2, label="GPD, maximum likelihood"
+    color=colors[1], linewidth=2, label="GPD, maximum likelihood"  
 )
 scatter!(ax, storm_periods, storms; color=:black, markersize=4, label="storms")
 return_period_axis!(ax)
@@ -400,13 +409,13 @@ fig
 **Your answer.**
 How does the maximum likelihood 100-year level compare with the posterior median and the credible interval, and what in the model explains any gap?
 
-> *Answer here*
+> The MLE 100-year level is slightly higher than the posterior median but is within the 95% credible interval. The difference occurs because the Bayesian model includes prior information that $\xi ~ N(0,0.25)$, while MLE uses only the best-fitting parameter values.
 
 **Your answer.**
 Is holding $\lambda$ fixed a reasonable simplification at your gauge?
 Compare the change in the 100-year level when $\lambda$ moves by one standard error, printed above, with the width of the credible interval.
 
-> *Answer here*
+> Yes, holding $\lambda$ fixed is reasonable. Changing $\lambda$ by one standard error changes the 100-year level from 7.07 to 7.58 ft, a range of only 0.51 ft, which is much smaller than the 6.45 ft width of the 95% credible interval.
 
 
 ## Comparison with the GEV
@@ -421,7 +430,7 @@ annmax = AnnMaxRecord(detrended; detrend=:none, units=u"ft")
 y = ustrip.(waterlevels(annmax))
 
 gev_mle = only(getdistribution(gevfit(y)))
-fit_gev = gevfitbayes(y; rng=rng, sampler=NUTS(0.99), progress=false)
+fit_gev = gevfitbayes(y; rng=rng, sampler=NUTS(0.975), progress=false)
 gev_draws = only.(posterior_distributions(fit_gev))
 gev_curves = [[returnlevel(d, T) for T in return_periods] for d in gev_draws]
 ```
@@ -468,14 +477,15 @@ fig
 Do the two approaches agree on the 100-year level, and which interval is narrower?
 Explain the difference in width from the data each fit uses.
 
-> *Answer here*
+> *Yes, the two approaches give similar 100-year return levels, with the GPD having a narrower credible interval. This is because the GPD used more obsevations in fitting the model. 
 
 **Your answer.**
 Compare both with your lab 4 result.
 If they differ, say which choice made the difference.
 
 > *Answer here*
-
+Because Los Angeles was not suitable for the GPD analysis, I changed to another city and reran Lab 4 for a consistent comparison. I used the quantile priors $\x_{100} \sim N(7.5,2.5^2)\$. The Lab 4 100-year return level was 8.39 ft [5.52, 23.76] with the vague prior and 7.08 ft [5.43, 9.22] with the quantile prior.
+In Lab 5, the 100-year return level was 6.71 ft [5.16, 11.61] for the GPD and 9.12 ft [5.58, 27.02] for the GEV. These results are broadly consistent because the intervals overlap. The quantile-prior result in Lab 4 is narrower because the prior gives more information about the tail.
 
 ## Sensitivity experiment
 
@@ -506,15 +516,14 @@ The last three columns are the 100-year level in feet: the maximum likelihood es
 
 | Change | Storms | $\lambda$ | $\xi$ | MLE | Posterior | Interval |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| none | | | | | | |
-| | | | | | | |
-| | | | | | | |
-| | | | | | | |
+| none | 56|1.37|0.305 | 7.33|6.71 | 5.16, 11.61 |
+|min gap hours:72 |59|1.44|0.337 |7.53 |6.74 |[5.17,12.06]| 
+| threshold:2.8 |28|0.68|0.155 |6.67 |6.66 |[5.26,11.12]| 
+| detrend:msl| 57| 1.39|0.446 |8.66 |6.99 |[5.16,13.18] |
 
 **Your answer.**
-Which change moved the 100-year level most, and by how much compared with the width of the credible interval?
 
-> *Answer here*
+> Changing the detrending method from linear to MSL moved the 100-year posterior median the most, from 6.71 ft to 6.99 ft, a change of 0.28 ft. However, compared with the baseline 95% credible interval width of 6.45 ft (11.61 − 5.16 ft), it only accounts for about 4% of  the width. This suggests that the 100-year estimate is relatively robust to these modeling choices, while the uncertainty in the tail is much larger.
 
 **Your answer.**
 Suppose every assumption behind the peaks-over-threshold model holds exactly: the storms are independent, they arrive as a Poisson process, and their excesses follow a GPD above every threshold you tried.
@@ -527,7 +536,8 @@ Under those assumptions, should the 100-year level change when you change each o
 
 State whether your table agrees empirically, and speculate why any differences might persist.
 
-> *Answer here*
+> Under the ideal assumptions, changing the threshold should not change the 100-year level because the GPD parameters and exceedance rate adjust with the threshold. Changing the declustering gap should also have little effect if the storms are already independent. Changing the prior can affect the Bayesian posterior, especially when the tail parameter is uncertain, but it does not affect the MLE. Changing the detrending method can affect the result because it changes the data used for fitting.
+My results generally agree with this. Changing the gap or threshold changed the posterior median only slightly, from 6.71 ft to 6.74 ft and 6.66 ft. Changing the detrending method had a larger effect, increasing it to 6.99 ft.
 
 
 ## Reporting a design value
@@ -536,7 +546,7 @@ State whether your table agrees empirically, and speculate why any differences m
 Report one 100-year water level for your gauge, with an interval, as you would in a report a city will act on.
 List the choices it depends on and say which one you are least sure of.
 
-> *Answer here*
+> I will choose my 100-year water level as 6.71 ft, with a 95% credible interval of [5.16, 11.61] ft. This estimate depends on the following choices: detrending method (linear), declustering gap (168 hours), threshold (2.5 ft), and prior on the GPD parameters. Among these, I am least sure about the detrending method, as it can significantly affect the results.
 
 
 ## Turning it in
